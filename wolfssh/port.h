@@ -89,6 +89,35 @@ extern "C" {
 
     #define WCLOSE(fd) NU_Close((fd))
 
+    static inline int wChmod(const char* f, int mode) {
+        unsigned char atr = 0;
+
+        if (f == NULL) {
+            return -1;
+        }
+
+        if (NU_Get_Attributes(&atr, f) != NU_SUCCESS) {
+            return -1;
+        }
+
+        /* Set attribute value */
+        atr = atr & 0xF0; /* clear first byte */
+        if (mode == 0x124) {
+            atr |= ARDONLY;   /* set read only value */
+        }
+        else {
+            /* if not setting read only set to normal */
+            atr |= ANORMAL;
+        }
+
+        if (NU_Set_Attributes(f, atr) != NU_SUCCESS) {
+            return -1;
+        }
+        else {
+            return 0;
+        }
+    }
+    #define CHMOD(f,m) wChmod((f),(m))
 #else
     #define WFILE FILE
     WOLFSSH_API int wfopen(WFILE**, const char*, const char*);
@@ -102,6 +131,7 @@ extern "C" {
     #define WREWIND(s)        rewind((s))
     #define WSEEK_END         SEEK_END
     #define WUTIMES(f,t)      utimes((f),(t))
+    #define WCHMOD(f,m)       chmod((f),(m))
 
     #if (defined(WOLFSSH_SCP) || defined(WOLFSSH_SFTP)) && \
         !defined(WOLFSSH_SCP_USER_CALLBACKS) && \

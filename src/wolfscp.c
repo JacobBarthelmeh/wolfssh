@@ -770,59 +770,18 @@ static int GetScpFileMode(WOLFSSH* ssh, byte* buf, word32 bufSz,
     modeOctet[SCP_MODE_OCTET_LEN] = '\0';
     idx += SCP_MODE_OCTET_LEN;
 
-#if defined(WOLFSSL_KEY_GEN) || defined(HAVE_COMP_KEY) || \
-    defined(WOLFSSL_DEBUG_MATH) || defined(DEBUG_WOLFSSL) || \
-    defined(WOLFSSL_PUBLIC_MP)
-    ret = mp_init(&tmp);
-    if (ret == MP_OKAY) {
-        ret = mp_read_radix(&tmp, (const char*)modeOctet, 8);
+    ret =  = wolfSSH_oct2dec(ssh, modeOctet, SCP_MODE_OCTET_LEN);
+    if (ret < 0) {
+        return ret;
     }
+    ssh->scpFileMode = ret;
 
-    if (ret == MP_OKAY) {
-        /* convert octal to decimal */
-        ret = mp_todecimal(&tmp, decimalString);
+    /* eat trailing space */
+    if (bufSz >= (word32)(idx + 1))
+        idx++;
 
-        if (ret == MP_OKAY) {
-            /* convert string to int */
-            ssh->scpFileMode = atoi(decimalString);
-        }
-    }
-
-    if (ret == MP_OKAY) {
-        /* eat trailing space */
-        if (bufSz >= (word32)(idx + 1))
-            idx++;
-
-        ret = WS_SUCCESS;
-        *inOutIdx = idx;
-    }
-
-    mp_clear(&tmp);
-#else
     ret = WS_SUCCESS;
-    /* convert octal string to int without mp_read_radix() */
-    mode = 0;
-
-    for (i = 0; i < SCP_MODE_OCTET_LEN; i++)
-    {
-        if (modeOctet[i] < '0' || modeOctet[0] > '7') {
-            ret = WS_BAD_ARGUMENT;
-            break;
-        }
-        mode <<= 3;
-        mode |= (modeOctet[i] - '0');
-    }
-
-    if (ret == WS_SUCCESS) {
-        /* store file mode */
-        ssh->scpFileMode = mode;
-        /* eat trailing space */
-        if (bufSz >= (word32)(idx +1))
-            idx++;
-        ret = WS_SUCCESS;
-        *inOutIdx = idx;
-    }
-#endif
+    *inOutIdx = idx;
 
     return ret;
 }
