@@ -231,34 +231,6 @@ int wolfSSH_CleanPath(WOLFSSH* ssh, char* in)
     }
 #endif
 
-    /* remove any ./ patterns */
-    for (i = 1; i < sz - 1; i++) {
-        if (path[i] == '.' && path[i - 1] != '.' && path[i + 1] == WS_DELIM) {
-            WMEMMOVE(path + i, path + i + 1, sz - i - 1);
-            path[sz - 1] = '\0';
-            i--;
-        }
-    }
-    sz = (int)WSTRLEN(path);
-
-    /* remove any /./ patterns */
-    for (i = 1; i + 1 < sz; i++) {
-        if (path[i] == '.' && path[i - 1] == WS_DELIM && path[i + 1] == WS_DELIM) {
-            WMEMMOVE(path + i, path + i + 1, sz - i + 1);
-            sz -= 1;
-            i--;
-        }
-    }
-
-    /* remove any double '/' or '\' chars */
-    for (i = 0; i < sz; i++) {
-        if ((path[i] == WS_DELIM && path[i+1] == WS_DELIM)) {
-            WMEMMOVE(path + i, path + i + 1, sz - i + 1);
-            sz -= 1;
-            i--;
-        }
-    }
-
     if (path != NULL) {
         /* go through path until no cases are found */
         do {
@@ -303,6 +275,35 @@ int wolfSSH_CleanPath(WOLFSSH* ssh, char* in)
                 }
             }
         } while (found);
+        sz = (long)WSTRLEN(path);
+
+        /* remove any ./ patterns */
+        for (i = 1; i < sz - 1; i++) {
+            if (path[i] == '.' && path[i - 1] != '.' && path[i + 1] == WS_DELIM) {
+                WMEMMOVE(path + i, path + i + 1, sz - i - 1);
+                path[sz - 1] = '\0';
+                i--;
+            }
+        }
+        sz = (int)WSTRLEN(path);
+
+        /* remove any /./ patterns */
+        for (i = 1; i + 1 < sz; i++) {
+            if (path[i] == '.' && path[i - 1] == WS_DELIM && path[i + 1] == WS_DELIM) {
+                WMEMMOVE(path + i, path + i + 1, sz - i + 1);
+                sz -= 1;
+                i--;
+            }
+        }
+
+        /* remove any double '/' or '\' chars */
+        for (i = 0; i < sz; i++) {
+            if ((path[i] == WS_DELIM && path[i+1] == WS_DELIM)) {
+                WMEMMOVE(path + i, path + i + 1, sz - i + 1);
+                sz -= 1;
+                i--;
+            }
+        }
 
 #if defined(WOLFSSL_NUCLEUS) || defined(USE_WINDOWS_API)
         sz = (long)WSTRLEN(path);
@@ -361,7 +362,7 @@ int wolfSSH_CleanPath(WOLFSSH* ssh, char* in)
         if (WMEMCMP(ssh->pathRestriction, path,
                     WSTRLEN(ssh->pathRestriction)) != 0) {
 
-            WLOG(WS_LOG_DEBUG, "Path was restricted");
+            WLOG(WS_LOG_DEBUG, "Path %s was restricted", path);
             WFREE(path, ssh->ctx->heap, DYNTYPE_TMP);
             return WS_PERMISSIONS;
         }
@@ -380,6 +381,7 @@ int wolfSSH_CleanPath(WOLFSSH* ssh, char* in)
     return (int)sz;
 }
 #endif
+
 
 int wolfSSH_SetFilesystemHandle(WOLFSSH* ssh, void* handle)
 {
