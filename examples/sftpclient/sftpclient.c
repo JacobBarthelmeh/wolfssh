@@ -115,80 +115,6 @@ static void sig_handler(const int sig)
 }
 #endif /* WS_NO_SIGNAL */
 
-/* cleans up absolute path */
-static void clean_path(char* path)
-{
-    int  i;
-    long sz = (long)WSTRLEN(path);
-    byte found;
-
-    /* remove any double '/' chars */
-    for (i = 0; i < sz; i++) {
-        if (path[i] == '/' && path[i+1] == '/') {
-            WMEMMOVE(path + i, path + i + 1, sz - i + 1);
-            sz -= 1;
-            i--;
-        }
-    }
-
-    /* remove any trailing '/' chars */
-    sz = (long)WSTRLEN(path);
-    for (i = (int)sz - 1; i > 0; i--) {
-        if (path[i] == '/') {
-            path[i] = '\0';
-        }
-        else {
-            break;
-        }
-    }
-
-    if (path != NULL) {
-        /* go through path until no cases are found */
-        do {
-            int prIdx = 0; /* begin of cut */
-            int enIdx = 0; /* end of cut */
-            sz = (long)WSTRLEN(path);
-
-            found = 0;
-            for (i = 0; i < sz; i++) {
-                if (path[i] == '/') {
-                    int z;
-
-                    /* if next two chars are .. then delete */
-                    if (path[i+1] == '.' && path[i+2] == '.') {
-                        enIdx = i + 3;
-
-                        /* start at one char before / and retrace path */
-                        for (z = i - 1; z > 0; z--) {
-                            if (path[z] == '/') {
-                                prIdx = z;
-                                break;
-                            }
-                        }
-
-                        /* cut out .. and previous */
-                        WMEMMOVE(path + prIdx, path + enIdx, sz - enIdx);
-                        path[sz - (enIdx - prIdx)] = '\0';
-
-                        if (enIdx == sz) {
-                            path[prIdx] = '\0';
-                        }
-
-                        /* case of at / */
-                        if (WSTRLEN(path) == 0) {
-                           path[0] = '/';
-                           path[1] = '\0';
-                        }
-
-                        found = 1;
-                        break;
-                    }
-                }
-            }
-        } while (found);
-    }
-}
-
 #define WS_MAX_EXAMPLE_RW 1024
 
 static int SetEcho(int on)
@@ -881,7 +807,7 @@ static int doCmds(func_args* args)
                 WMEMCPY(workingDir, pt, sz);
                 workingDir[sz] = '\0';
 
-                clean_path(workingDir);
+                wolfSSH_CleanPath(ssh, workingDir);
             }
             WFREE(f, NULL, DYNAMIC_TYPE_TMP_BUFFER);
             continue;

@@ -494,6 +494,10 @@ struct WOLFSSH {
     byte useAgent;
     byte agentEnabled;
 #endif /* WOLFSSH_AGENT */
+
+#if defined(WOLFSSH_SCP) || defined(WOLFSSH_SFTP)
+    char* pathRestriction; /* restrict access */
+#endif
 };
 
 
@@ -752,7 +756,8 @@ enum WS_DynamicTypes {
     DYNTYPE_AGENT_KEY,
     DYNTYPE_AGENT_BUFFER,
     DYNTYPE_FILE,
-    DYNTYPE_TEMP
+    DYNTYPE_TEMP,
+    DYNTYPE_PATH
 };
 
 
@@ -829,7 +834,6 @@ WOLFSSH_LOCAL int wsScpSendCallback(WOLFSSH*, int, const char*, char*, word32,
 #endif
 
 
-WOLFSSH_LOCAL void clean_path(char* path);
 WOLFSSH_LOCAL void DumpOctetString(const byte*, word32);
 WOLFSSH_LOCAL int wolfSSH_oct2dec(WOLFSSH* ssh, byte* oct, word32 octSz);
 WOLFSSH_LOCAL void AddAssign64(word32*, word32);

@@ -176,6 +176,210 @@ WS_SOCKET_T wolfSSH_get_fd(const WOLFSSH* ssh)
 #endif
 }
 
+#if (defined(WOLFSSH_SFTP) || defined(WOLFSSH_SCP)) && \
+    !defined(NO_WOLFSSH_SERVER)
+/* set path restriction
+ * returns WS_SUCCESS on success
+ */
+int wolfSSH_SetPathRestriction(WOLFSSH* ssh, const char* rest)
+{
+    if (ssh != NULL) {
+        if (ssh->pathRestriction != NULL)
+            WFREE(ssh->pathRestriction, ssh->ctx->heap, DYNTYPE_PATH);
+        if (rest == NULL) {
+            ssh->pathRestriction = NULL;
+        }
+        else {
+            int sz = (int)WSTRLEN(rest);
+            ssh->pathRestriction = (char*)WMALLOC(sz + 1, ssh->ctx->heap,
+                    DYNTYPE_PATH);
+            if (ssh->pathRestriction == NULL)
+                return WS_MEMORY_E;
+            WMEMCPY(ssh->pathRestriction, rest, sz);
+            ssh->pathRestriction[sz] = '\0';
+        }
+    }
+    return WS_SUCCESS;
+}
+
+
+/* Cleans up absolute path and overwrites 'in' with new path. The cleaned path
+ * is always equal to or smaller then the length of 'in'.
+ * returns size of new path on success (strlen sz) and negative values on fail*/
+int wolfSSH_CleanPath(WOLFSSH* ssh, char* in)
+{
+    int  i;
+    long sz;
+    byte found;
+    char *path;
+
+    if (in == NULL) {
+        return WS_BAD_ARGUMENT;
+    }
+
+    sz   = (long)WSTRLEN(in);
+    path = (char*)WMALLOC(sz+1, ssh->ctx->heap, DYNTYPE_TEMP);
+    if (path == NULL) {
+        return WS_MEMORY_E;
+    }
+    WMEMCPY(path, in, sz);
+    path[sz] = '\0';
+
+#if defined(WOLFSSL_NUCLEUS) || defined(USE_WINDOWS_API)
+    for (i = 0; i < sz; i++) {
+        if (path[i] == '/') path[i] = '\\';
+    }
+#endif
+
+    /* remove any ./ patterns */
+    for (i = 1; i < sz - 1; i++) {
+        if (path[i] == '.' && path[i - 1] != '.' && path[i + 1] == WS_DELIM) {
+            WMEMMOVE(path + i, path + i + 1, sz - i - 1);
+            path[sz - 1] = '\0';
+            i--;
+        }
+    }
+    sz = (int)WSTRLEN(path);
+
+    /* remove any /./ patterns */
+    for (i = 1; i + 1 < sz; i++) {
+        if (path[i] == '.' && path[i - 1] == WS_DELIM && path[i + 1] == WS_DELIM) {
+            WMEMMOVE(path + i, path + i + 1, sz - i + 1);
+            sz -= 1;
+            i--;
+        }
+    }
+
+    /* remove any double '/' or '\' chars */
+    for (i = 0; i < sz; i++) {
+        if ((path[i] == WS_DELIM && path[i+1] == WS_DELIM)) {
+            WMEMMOVE(path + i, path + i + 1, sz - i + 1);
+            sz -= 1;
+            i--;
+        }
+    }
+
+    if (path != NULL) {
+        /* go through path until no cases are found */
+        do {
+            int prIdx = 0; /* begin of cut */
+            int enIdx = 0; /* end of cut */
+            sz = (long)WSTRLEN(path);
+
+            found = 0;
+            for (i = 1; i < sz; i++) {
+                if (path[i] == WS_DELIM) {
+                    int z;
+
+                    /* if next two chars are .. then delete */
+                    if (path[i+1] == '.' && path[i+2] == '.') {
+                        enIdx = i + 3;
+
+                        /* start at one char before / and retrace path */
+                        for (z = i - 1; z > 0; z--) {
+                            if (path[z] == WS_DELIM || path[z] == ':') {
+                                prIdx = z;
+                                break;
+                            }
+                        }
+
+                        /* cut out .. and previous */
+                        WMEMMOVE(path + prIdx, path + enIdx, sz - enIdx);
+                        path[sz - (enIdx - prIdx)] = '\0';
+
+                        if (enIdx == sz) {
+                            path[prIdx] = '\0';
+                        }
+
+                        /* case of at / */
+                        if (WSTRLEN(path) == 0) {
+                           path[0] = '/';
+                           path[1] = '\0';
+                        }
+
+                        found = 1;
+                        break;
+                    }
+                }
+            }
+        } while (found);
+
+#if defined(WOLFSSL_NUCLEUS) || defined(USE_WINDOWS_API)
+        sz = (long)WSTRLEN(path);
+
+        if (path[sz - 1] == ':') {
+            path[sz] = WS_DELIM;
+            path[sz + 1] = '\0';
+        }
+
+        /* clean up any multiple drive listed i.e. A:/A: */
+        {
+            int i,j;
+            sz = (long)WSTRLEN(path);
+            for (i = 0, j = 0; i < sz; i++) {
+                if (path[i] == ':') {
+                    if (j == 0) j = i;
+                    else {
+                        /* @TODO only checking once */
+                        WMEMMOVE(path, path + i - WS_DRIVE_SIZE,
+                                sz - i + WS_DRIVE_SIZE);
+                        path[sz - i + WS_DRIVE_SIZE] = '\0';
+                        break;
+                    }
+                }
+            }
+        }
+
+        /* remove leading '/' for nucleus. Preserve case of single "/" */
+        sz = (long)WSTRLEN(path);
+        while (sz > 2 && path[0] == WS_DELIM) {
+            sz--;
+            WMEMMOVE(path, path + 1, sz);
+            path[sz] = '\0';
+        }
+#endif
+
+#ifndef FREESCALE_MQX
+        /* remove trailing delimiter */
+        if (sz > 3 && path[sz - 1] == WS_DELIM) {
+            path[sz - 1] = '\0';
+        }
+#endif
+
+#ifdef FREESCALE_MQX
+        /* remove trailing '.' */
+        if (path[sz - 1] == '.') {
+            path[sz - 1] = '\0';
+        }
+#endif
+    }
+
+    /* check on path restriction, first part of path should be the restriction
+     * path. i.e. restriction = /path/ then the path's first part should be
+     * /path/ */
+    if (ssh->pathRestriction != NULL) {
+        if (WMEMCMP(ssh->pathRestriction, path,
+                    WSTRLEN(ssh->pathRestriction)) != 0) {
+
+            WLOG(WS_LOG_DEBUG, "Path was restricted");
+            WFREE(path, ssh->ctx->heap, DYNTYPE_TMP);
+            return WS_PERMISSIONS;
+        }
+    }
+
+    /* copy result back to 'in' buffer */
+    if (WSTRLEN(in) < WSTRLEN(path)) {
+        WLOG(WS_LOG_ERROR, "Fatal error cleaning path");
+        WFREE(path, ssh->heap, DYNTYPE_TMP);
+        return WS_BUFFER_E;
+    }
+    sz = WSTRLEN(path);
+    WMEMCPY(in, path, sz);
+    in[sz] = '\0';
+    WFREE(path, ssh->heap, DYNTYPE_TMP);
+    return (int)sz;
+}
+#endif
 
 int wolfSSH_SetFilesystemHandle(WOLFSSH* ssh, void* handle)
 {

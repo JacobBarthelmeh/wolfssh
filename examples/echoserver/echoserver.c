@@ -1500,6 +1500,7 @@ static void ShowUsage(void)
     printf(" -N            use non-blocking sockets\n");
 #ifdef WOLFSSH_SFTP
     printf(" -d <string>   set the home directory for SFTP connections\n");
+    printf(" -r <string>   set path restriction on connections\n");
 #endif
 }
 
@@ -1536,6 +1537,7 @@ THREAD_RETURN WOLFSSH_THREAD echoserver_test(void* args)
     word16 port = wolfSshPort;
     char* readyFile = NULL;
     const char* defaultSftpPath = NULL;
+    const char* defaultSftpRest = NULL;
     char  nonBlock  = 0;
 
     int     argc = serverArgs->argc;
@@ -1543,7 +1545,7 @@ THREAD_RETURN WOLFSSH_THREAD echoserver_test(void* args)
     serverArgs->return_code = 0;
 
     if (argc > 0) {
-    while ((ch = mygetopt(argc, argv, "?1d:efEp:R:N")) != -1) {
+    while ((ch = mygetopt(argc, argv, "?1d:efEp:R:r:N")) != -1) {
         switch (ch) {
             case '?' :
                 ShowUsage();
@@ -1585,6 +1587,10 @@ THREAD_RETURN WOLFSSH_THREAD echoserver_test(void* args)
 
             case 'd':
                 defaultSftpPath = myoptarg;
+                break;
+
+            case 'r':
+                defaultSftpRest = myoptarg;
                 break;
 
             default:
@@ -1747,6 +1753,12 @@ THREAD_RETURN WOLFSSH_THREAD echoserver_test(void* args)
                 exit(EXIT_FAILURE);
             }
         }
+        if (defaultSftpRest) {
+            if (wolfSSH_SetPathRestriction(ssh, defaultSftpRest) != WS_SUCCESS){
+                fprintf(stderr, "Unable to set path restriction.\n");
+                exit(EXIT_FAILURE);
+            }
+        }
     #endif
 
     #ifdef WOLFSSL_NUCLEUS
@@ -1814,6 +1826,7 @@ THREAD_RETURN WOLFSSH_THREAD echoserver_test(void* args)
 #endif
 
     (void)defaultSftpPath;
+    (void)defaultSftpRest;
     return 0;
 }
 

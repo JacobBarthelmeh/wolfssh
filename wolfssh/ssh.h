@@ -173,6 +173,8 @@ typedef int (*WS_CallbackUserAuth)(byte, WS_UserAuthData*, void*);
 WOLFSSH_API void wolfSSH_SetUserAuth(WOLFSSH_CTX*, WS_CallbackUserAuth);
 WOLFSSH_API void wolfSSH_SetUserAuthCtx(WOLFSSH*, void*);
 WOLFSSH_API void* wolfSSH_GetUserAuthCtx(WOLFSSH*);
+WOLFSSH_API int wolfSSH_SetPathRestriction(WOLFSSH* ssh, const char* rest);
+WOLFSSH_API int wolfSSH_CleanPath(WOLFSSH* ssh, char* in);
 
 /* Public Key Check Callback */
 typedef int (*WS_CallbackPublicKeyCheck)(const byte*, word32, void*);
