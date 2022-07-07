@@ -55,7 +55,7 @@ examples/sftpclient/wolfsftp
 examples/scpclient/wolfscp
 
 # applications
-apps/wolfsshd
+apps/wolfsshd/wolfsshd
 
 # test output
 tests/*.test
