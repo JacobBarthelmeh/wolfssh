@@ -823,7 +823,7 @@ int DefaultUserAuthTypes(WOLFSSH* ssh, void* ctx)
     usrConf = wolfSSHD_AuthGetUserConf(authCtx, usr, NULL, NULL,
             NULL, NULL, NULL);
     if (usrConf == NULL) {
-
+        ret = WS_BAD_ARGUMENT;
     }
     else {
         if (wolfSSHD_ConfigGetPwAuth(usrConf) == 1) {
@@ -1055,20 +1055,24 @@ WOLFSSHD_CONFIG* wolfSSHD_AuthGetUserConf(const WOLFSSHD_AUTH* auth,
     struct group* g = NULL;
     WOLFSSHD_CONFIG* ret = NULL;
 
-    if (auth != NULL && usr != NULL) {
+    if (auth != NULL) {
         struct passwd *p_passwd;
+        char* gName = NULL;
 
-        p_passwd = getpwnam((const char *)usr);
-        if (p_passwd == NULL) {
-            return NULL;
+        if (usr != NULL) {
+            p_passwd = getpwnam((const char *)usr);
+            if (p_passwd == NULL) {
+                return NULL;
+            }
+
+            g = getgrgid(p_passwd->pw_gid);
+            if (g == NULL) {
+                return NULL;
+            }
+            gName = g->gr_name;
         }
 
-        g = getgrgid(p_passwd->pw_gid);
-        if (g == NULL) {
-            return NULL;
-        }
-
-        ret = wolfSSHD_GetUserConf(auth->conf, usr, g->gr_name, host, localAdr,
+        ret = wolfSSHD_GetUserConf(auth->conf, usr, gName, host, localAdr,
             localPort, RDomain, adr);
     }
     return ret;
