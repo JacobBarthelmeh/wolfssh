@@ -76,7 +76,7 @@ struct WOLFSSHD_AUTH {
 #endif
 
 #ifndef MAX_LINE_SZ
-    #define MAX_LINE_SZ 500
+    #define MAX_LINE_SZ 900
 #endif
 #ifndef MAX_PATH_SZ
     #define MAX_PATH_SZ 80
@@ -144,14 +144,24 @@ static int CheckAuthKeysLine(char* line, word32 lineSz, const byte* key,
     word32 keyCandSz;
     char* last;
     enum {
+    #ifdef WOLFSSH_CERTS
+        NUM_ALLOWED_TYPES = 9
+    #else
         NUM_ALLOWED_TYPES = 5
+    #endif
     };
     static const char* allowedTypes[NUM_ALLOWED_TYPES] = {
         "ssh-rsa",
         "ssh-ed25519",
         "ecdsa-sha2-nistp256",
         "ecdsa-sha2-nistp384",
-        "ecdsa-sha2-nistp521"
+        "ecdsa-sha2-nistp521",
+    #ifdef WOLFSSH_CERTS
+        "x509v3-ssh-rsa",
+        "x509v3-ecdsa-sha2-nistp256",
+        "x509v3-ecdsa-sha2-nistp384",
+        "x509v3-ecdsa-sha2-nistp521",
+    #endif
     };
     int typeOk = 0;
     int i;
@@ -639,7 +649,7 @@ static int DoCheckUser(const char* usr, WOLFSSHD_AUTH* auth)
     if (wolfSSHD_ConfigGetPermitRoot(auth->conf) == 0) {
         if (XSTRCMP(usr, "root") == 0) {
             wolfSSH_Log(WS_LOG_ERROR, "[SSHD] Login as root not permited");
-            ret = WOLFSSH_USERAUTH_FAILURE;
+            ret = WOLFSSH_USERAUTH_REJECTED;
         }
     }
 
@@ -692,7 +702,7 @@ static int RequestAuthentication(WS_UserAuthData* authData,
         if (wolfSSHD_ConfigGetPwAuth(authCtx->conf) != 1) {
             wolfSSH_Log(WS_LOG_ERROR, "[SSHD] Password authentication not "
                         "allowed by configuration!");
-            ret = WOLFSSH_USERAUTH_FAILURE;
+            ret = WOLFSSH_USERAUTH_REJECTED;
         }
         /* Check if password is valid for this user. */
         /* first handle empty password cases */
@@ -791,6 +801,35 @@ int DefaultUserAuth(byte authType, WS_UserAuthData* authData, void* ctx)
     /* call to possibly privileged authenticator for password check */
     if (ret == WOLFSSH_USERAUTH_SUCCESS) {
         ret = RequestAuthentication(authData, authCtx);
+    }
+
+    return ret;
+}
+
+
+int DefaultUserAuthTypes(WOLFSSH* ssh, void* ctx)
+{
+    WOLFSSHD_CONFIG* usrConf;
+    WOLFSSHD_AUTH* authCtx;
+    char* usr;
+    int   ret = 0;
+
+    if (ssh == NULL || ctx == NULL)
+        return WS_BAD_ARGUMENT;
+    authCtx = (WOLFSSHD_AUTH*)ctx;
+
+    /* get configuration for user */
+    usr     = wolfSSH_GetUsername(ssh);
+    usrConf = wolfSSHD_AuthGetUserConf(authCtx, usr, NULL, NULL,
+            NULL, NULL, NULL);
+    if (usrConf == NULL) {
+
+    }
+    else {
+        if (wolfSSHD_ConfigGetPwAuth(usrConf) == 1) {
+            ret |= WOLFSSH_USERAUTH_PASSWORD;
+        }
+        ret |= WOLFSSH_USERAUTH_PUBLICKEY;
     }
 
     return ret;
@@ -1016,7 +1055,7 @@ WOLFSSHD_CONFIG* wolfSSHD_AuthGetUserConf(const WOLFSSHD_AUTH* auth,
     struct group* g = NULL;
     WOLFSSHD_CONFIG* ret = NULL;
 
-    if (auth != NULL) {
+    if (auth != NULL && usr != NULL) {
         struct passwd *p_passwd;
 
         p_passwd = getpwnam((const char *)usr);

@@ -7386,18 +7386,10 @@ static const char cannedKeyAlgoClientNames[] =
 #endif
 
 static const char cannedKeyAlgoRsaNames[] = "ssh-rsa";
-#ifdef WOLFSSH_CERTS
-static const char cannedKeyAlgoX509RsaNames[] = "x509v3-ssh-rsa";
-#endif
 #if !defined(WOLFSSH_NO_ECDSA) && !defined(WOLFSSH_NO_ECDH)
 static const char cannedKeyAlgoEcc256Names[] = "ecdsa-sha2-nistp256";
 static const char cannedKeyAlgoEcc384Names[] = "ecdsa-sha2-nistp384";
 static const char cannedKeyAlgoEcc521Names[] = "ecdsa-sha2-nistp521";
-#ifdef WOLFSSH_CERTS
-static const char cannedKeyAlgoX509Ecc256Names[] = "x509v3-ecdsa-sha2-nistp256";
-static const char cannedKeyAlgoX509Ecc384Names[] = "x509v3-ecdsa-sha2-nistp384";
-static const char cannedKeyAlgoX509Ecc521Names[] = "x509v3-ecdsa-sha2-nistp521";
-#endif
 #endif
 
 static const char cannedKexAlgoNames[] =
@@ -7442,10 +7434,6 @@ static const word32 cannedMacAlgoNamesSz = sizeof(cannedMacAlgoNames) - 2;
 static const word32 cannedKeyAlgoClientNamesSz =
                                            sizeof(cannedKeyAlgoClientNames) - 2;
 static const word32 cannedKeyAlgoRsaNamesSz = sizeof(cannedKeyAlgoRsaNames) - 1;
-#ifdef WOLFSSH_CERTS
-static const word32 cannedKeyAlgoX509RsaNamesSz =
-        sizeof(cannedKeyAlgoX509RsaNames) - 1;
-#endif
 #if !defined(WOLFSSH_NO_ECDSA) && !defined(WOLFSSH_NO_ECDH)
 static const word32 cannedKeyAlgoEcc256NamesSz =
                                            sizeof(cannedKeyAlgoEcc256Names) - 1;
@@ -7453,14 +7441,6 @@ static const word32 cannedKeyAlgoEcc384NamesSz =
                                            sizeof(cannedKeyAlgoEcc384Names) - 1;
 static const word32 cannedKeyAlgoEcc521NamesSz =
                                            sizeof(cannedKeyAlgoEcc521Names) - 1;
-#ifdef WOLFSSH_CERTS
-static const word32 cannedKeyAlgoX509Ecc256NamesSz =
-        sizeof(cannedKeyAlgoX509Ecc256Names) - 1;
-static const word32 cannedKeyAlgoX509Ecc384NamesSz =
-        sizeof(cannedKeyAlgoX509Ecc384Names) - 1;
-static const word32 cannedKeyAlgoX509Ecc521NamesSz =
-        sizeof(cannedKeyAlgoX509Ecc521Names) - 1;
-#endif
 #endif
 static const word32 cannedKexAlgoNamesSz = sizeof(cannedKexAlgoNames) - 2;
 static const word32 cannedNoneNamesSz = sizeof(cannedNoneNames) - 1;
@@ -7497,61 +7477,25 @@ int SendKexInit(WOLFSSH* ssh)
             switch (ssh->ctx->useEcc) {
                 #if !defined(WOLFSSH_NO_ECDSA) && !defined(WOLFSSH_NO_ECDH)
                 case ECC_SECP256R1:
-                    if (ssh->ctx->useCert) {
-                    #ifdef WOLFSSH_CERTS
-                        cannedKeyAlgoNames = cannedKeyAlgoX509Ecc256Names;
-                        cannedKeyAlgoNamesSz =
-                            cannedKeyAlgoX509Ecc256NamesSz;
-                    #endif
-                    }
-                    else {
-                        cannedKeyAlgoNames = cannedKeyAlgoEcc256Names;
-                        cannedKeyAlgoNamesSz = cannedKeyAlgoEcc256NamesSz;
-                    }
+                    cannedKeyAlgoNames   = cannedKeyAlgoEcc256Names;
+                    cannedKeyAlgoNamesSz = cannedKeyAlgoEcc256NamesSz;
                     break;
                 case ECC_SECP384R1:
-                    if (ssh->ctx->useCert) {
-                    #ifdef WOLFSSH_CERTS
-                        cannedKeyAlgoNames = cannedKeyAlgoX509Ecc384Names;
-                        cannedKeyAlgoNamesSz =
-                            cannedKeyAlgoX509Ecc384NamesSz;
-                    #endif
-                    }
-                    else {
-                        cannedKeyAlgoNames = cannedKeyAlgoEcc384Names;
-                        cannedKeyAlgoNamesSz = cannedKeyAlgoEcc384NamesSz;
-                    }
+                    cannedKeyAlgoNames   = cannedKeyAlgoEcc384Names;
+                    cannedKeyAlgoNamesSz = cannedKeyAlgoEcc384NamesSz;
                     break;
                 case ECC_SECP521R1:
-                    if (ssh->ctx->useCert) {
-                    #ifdef WOLFSSH_CERTS
-                        cannedKeyAlgoNames = cannedKeyAlgoX509Ecc521Names;
-                        cannedKeyAlgoNamesSz =
-                            cannedKeyAlgoX509Ecc521NamesSz;
-                    #endif
-                    }
-                    else {
-                        cannedKeyAlgoNames = cannedKeyAlgoEcc521Names;
-                        cannedKeyAlgoNamesSz =
-                            cannedKeyAlgoEcc521NamesSz;
-                    }
+                    cannedKeyAlgoNames   = cannedKeyAlgoEcc521Names;
+                    cannedKeyAlgoNamesSz = cannedKeyAlgoEcc521NamesSz;
                     break;
                 #endif
                 default:
-                    if (ssh->ctx->useCert) {
-                    #ifdef WOLFSSH_CERTS
-                        cannedKeyAlgoNames = cannedKeyAlgoX509RsaNames;
-                        cannedKeyAlgoNamesSz = cannedKeyAlgoX509RsaNamesSz;
-                    #endif
-                    }
-                    else {
-                        cannedKeyAlgoNames = cannedKeyAlgoRsaNames;
-                        cannedKeyAlgoNamesSz = cannedKeyAlgoRsaNamesSz;
-                    }
+                    cannedKeyAlgoNames   = cannedKeyAlgoRsaNames;
+                    cannedKeyAlgoNamesSz = cannedKeyAlgoRsaNamesSz;
             }
         }
         else {
-            cannedKeyAlgoNames = cannedKeyAlgoClientNames;
+            cannedKeyAlgoNames   = cannedKeyAlgoClientNames;
             cannedKeyAlgoNamesSz = cannedKeyAlgoClientNamesSz;
         }
         payloadSz = MSG_ID_SZ + COOKIE_SZ + (LENGTH_SZ * 11) + BOOLEAN_SZ +
@@ -9290,14 +9234,6 @@ typedef struct WS_KeySignature {
 } WS_KeySignature;
 
 
-static const char cannedAuths[] =
-#if !defined(WOLFSSH_NO_RSA) || !defined(WOLFSSH_NO_ECDSA)
-    "publickey,"
-#endif
-    "password,";
-static const word32 cannedAuthsSz = sizeof(cannedAuths) - 2;
-
-
 /* Updates the payload size, and maybe loads keys. */
 static int PrepareUserAuthRequestPassword(WOLFSSH* ssh, word32* payloadSz,
         const WS_UserAuthData* authData)
@@ -10487,32 +10423,71 @@ int SendUserAuthRequest(WOLFSSH* ssh, byte authId, int addSig)
     return ret;
 }
 
+#ifndef MAX_AUTH_STRING
+    #define MAX_AUTH_STRING 80
+#endif
+static int GetAllowedAuth(WOLFSSH* ssh, char* authStr)
+{
+    int typeAllowed = 0;
+
+    typeAllowed |= WOLFSSH_USERAUTH_PASSWORD;
+#if !defined(WOLFSSH_NO_RSA) || !defined(WOLFSSH_NO_ECDSA)
+    typeAllowed |= WOLFSSH_USERAUTH_PUBLICKEY;
+#endif
+
+    if (ssh == NULL || authStr == NULL)
+        return WS_BAD_ARGUMENT;
+
+    authStr[0] = '\0';
+    if (ssh->ctx && ssh->ctx->userAuthTypesCb) {
+        typeAllowed = ssh->ctx->userAuthTypesCb(ssh, ssh->userAuthCtx);
+    }
+    if (typeAllowed & WOLFSSH_USERAUTH_PUBLICKEY) {
+        WSTRNCAT(authStr, "publickey,", MAX_AUTH_STRING-1);
+    }
+
+    if (typeAllowed & WOLFSSH_USERAUTH_PASSWORD) {
+        WSTRNCAT(authStr, "password,", MAX_AUTH_STRING-1);
+    }
+
+    /* remove last comma from the list */
+    return (int)XSTRLEN(authStr) - 1;
+}
 
 int SendUserAuthFailure(WOLFSSH* ssh, byte partialSuccess)
 {
     byte* output;
     word32 idx;
     int ret = WS_SUCCESS;
+    int   authSz;
+    char  authStr[MAX_AUTH_STRING];
 
     WLOG(WS_LOG_DEBUG, "Entering SendUserAuthFailure()");
 
     if (ssh == NULL)
         ret = WS_BAD_ARGUMENT;
 
+    if (ret == WS_SUCCESS) {
+        authSz = GetAllowedAuth(ssh, authStr);
+        if (authSz < 0) {
+            ret = authSz; /* propogate error value */
+        }
+    }
+
     if (ret == WS_SUCCESS)
         ret = PreparePacket(ssh,
                             MSG_ID_SZ + LENGTH_SZ +
-                            cannedAuthsSz + BOOLEAN_SZ);
+                            authSz + BOOLEAN_SZ);
 
     if (ret == WS_SUCCESS) {
         output = ssh->outputBuffer.buffer;
         idx = ssh->outputBuffer.length;
 
         output[idx++] = MSGID_USERAUTH_FAILURE;
-        c32toa(cannedAuthsSz, output + idx);
+        c32toa(authSz, output + idx);
         idx += LENGTH_SZ;
-        WMEMCPY(output + idx, cannedAuths, cannedAuthsSz);
-        idx += cannedAuthsSz;
+        WMEMCPY(output + idx, authStr, authSz);
+        idx += authSz;
         output[idx++] = (partialSuccess != 0);
 
         ssh->outputBuffer.length = idx;
