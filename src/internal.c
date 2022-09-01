@@ -7386,10 +7386,19 @@ static const char cannedKeyAlgoClientNames[] =
 #endif
 
 static const char cannedKeyAlgoRsaNames[] = "ssh-rsa";
+#ifdef WOLFSSH_CERTS
+static const char cannedKeyAlgoX509RsaNames[] = "x509v3-ssh-rsa";
+#endif
 #if !defined(WOLFSSH_NO_ECDSA) && !defined(WOLFSSH_NO_ECDH)
 static const char cannedKeyAlgoEcc256Names[] = "ecdsa-sha2-nistp256";
 static const char cannedKeyAlgoEcc384Names[] = "ecdsa-sha2-nistp384";
 static const char cannedKeyAlgoEcc521Names[] = "ecdsa-sha2-nistp521";
+#ifdef WOLFSSH_CERTS
+static const char cannedKeyAlgoX509Ecc256Names[] = "x509v3-ecdsa-sha2-nistp256";
+static const char cannedKeyAlgoX509Ecc384Names[] = "x509v3-ecdsa-sha2-nistp384";
+static const char cannedKeyAlgoX509Ecc521Names[] = "x509v3-ecdsa-sha2-nistp521";
+#endif
+
 #endif
 
 static const char cannedKexAlgoNames[] =
@@ -7434,6 +7443,10 @@ static const word32 cannedMacAlgoNamesSz = sizeof(cannedMacAlgoNames) - 2;
 static const word32 cannedKeyAlgoClientNamesSz =
                                            sizeof(cannedKeyAlgoClientNames) - 2;
 static const word32 cannedKeyAlgoRsaNamesSz = sizeof(cannedKeyAlgoRsaNames) - 1;
+#ifdef WOLFSSH_CERTS
+static const word32 cannedKeyAlgoX509RsaNamesSz =
+        sizeof(cannedKeyAlgoX509RsaNames) - 1;
+#endif
 #if !defined(WOLFSSH_NO_ECDSA) && !defined(WOLFSSH_NO_ECDH)
 static const word32 cannedKeyAlgoEcc256NamesSz =
                                            sizeof(cannedKeyAlgoEcc256Names) - 1;
@@ -7441,6 +7454,14 @@ static const word32 cannedKeyAlgoEcc384NamesSz =
                                            sizeof(cannedKeyAlgoEcc384Names) - 1;
 static const word32 cannedKeyAlgoEcc521NamesSz =
                                            sizeof(cannedKeyAlgoEcc521Names) - 1;
+#ifdef WOLFSSH_CERTS
+static const word32 cannedKeyAlgoX509Ecc256NamesSz =
+        sizeof(cannedKeyAlgoX509Ecc256Names) - 1;
+static const word32 cannedKeyAlgoX509Ecc384NamesSz =
+        sizeof(cannedKeyAlgoX509Ecc384Names) - 1;
+static const word32 cannedKeyAlgoX509Ecc521NamesSz =
+        sizeof(cannedKeyAlgoX509Ecc521Names) - 1;
+#endif
 #endif
 static const word32 cannedKexAlgoNamesSz = sizeof(cannedKexAlgoNames) - 2;
 static const word32 cannedNoneNamesSz = sizeof(cannedNoneNames) - 1;
@@ -7477,21 +7498,61 @@ int SendKexInit(WOLFSSH* ssh)
             switch (ssh->ctx->useEcc) {
                 #if !defined(WOLFSSH_NO_ECDSA) && !defined(WOLFSSH_NO_ECDH)
                 case ECC_SECP256R1:
-                    cannedKeyAlgoNames   = cannedKeyAlgoEcc256Names;
-                    cannedKeyAlgoNamesSz = cannedKeyAlgoEcc256NamesSz;
+                    if (ssh->ctx->useCert) {
+                    #ifdef WOLFSSH_CERTS
+                        cannedKeyAlgoNames = cannedKeyAlgoX509Ecc256Names;
+                        cannedKeyAlgoNamesSz =
+                            cannedKeyAlgoX509Ecc256NamesSz;
+                    #endif
+                    }
+                    else {
+                        cannedKeyAlgoNames = cannedKeyAlgoEcc256Names;
+                        cannedKeyAlgoNamesSz = cannedKeyAlgoEcc256NamesSz;
+                    }
+
                     break;
                 case ECC_SECP384R1:
-                    cannedKeyAlgoNames   = cannedKeyAlgoEcc384Names;
-                    cannedKeyAlgoNamesSz = cannedKeyAlgoEcc384NamesSz;
+                    if (ssh->ctx->useCert) {
+                    #ifdef WOLFSSH_CERTS
+                        cannedKeyAlgoNames = cannedKeyAlgoX509Ecc384Names;
+                        cannedKeyAlgoNamesSz =
+                            cannedKeyAlgoX509Ecc384NamesSz;
+                    #endif
+                    }
+                    else {
+                        cannedKeyAlgoNames = cannedKeyAlgoEcc384Names;
+                        cannedKeyAlgoNamesSz = cannedKeyAlgoEcc384NamesSz;
+                    }
+
                     break;
                 case ECC_SECP521R1:
-                    cannedKeyAlgoNames   = cannedKeyAlgoEcc521Names;
-                    cannedKeyAlgoNamesSz = cannedKeyAlgoEcc521NamesSz;
+                    if (ssh->ctx->useCert) {
+                    #ifdef WOLFSSH_CERTS
+                        cannedKeyAlgoNames = cannedKeyAlgoX509Ecc521Names;
+                        cannedKeyAlgoNamesSz =
+                            cannedKeyAlgoX509Ecc521NamesSz;
+                    #endif
+                    }
+                    else {
+                        cannedKeyAlgoNames = cannedKeyAlgoEcc521Names;
+                        cannedKeyAlgoNamesSz =
+                            cannedKeyAlgoEcc521NamesSz;
+                    }
+
                     break;
                 #endif
                 default:
-                    cannedKeyAlgoNames   = cannedKeyAlgoRsaNames;
-                    cannedKeyAlgoNamesSz = cannedKeyAlgoRsaNamesSz;
+                    if (ssh->ctx->useCert) {
+                    #ifdef WOLFSSH_CERTS
+                        cannedKeyAlgoNames = cannedKeyAlgoX509RsaNames;
+                        cannedKeyAlgoNamesSz = cannedKeyAlgoX509RsaNamesSz;
+                    #endif
+                    }
+                    else {
+                        cannedKeyAlgoNames = cannedKeyAlgoRsaNames;
+                        cannedKeyAlgoNamesSz = cannedKeyAlgoRsaNamesSz;
+                    }
+
             }
         }
         else {
