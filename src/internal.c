@@ -2162,18 +2162,6 @@ static const byte cannedMacAlgo[] = {
 };
 
 static const byte  cannedKeyAlgoClient[] = {
-#ifndef WOLFSSH_NO_ECDSA_SHA2_NISTP521
-    ID_ECDSA_SHA2_NISTP521,
-#endif
-#ifndef WOLFSSH_NO_ECDSA_SHA2_NISTP384
-    ID_ECDSA_SHA2_NISTP384,
-#endif
-#ifndef WOLFSSH_NO_ECDSA_SHA2_NISTP256
-    ID_ECDSA_SHA2_NISTP256,
-#endif
-#ifndef WOLFSSH_NO_SSH_RSA_SHA1
-    ID_SSH_RSA,
-#endif
 #ifdef WOLFSSH_CERTS
 #ifndef WOLFSSH_NO_ECDSA_SHA2_NISTP521
     ID_X509V3_ECDSA_SHA2_NISTP521,
@@ -2187,6 +2175,18 @@ static const byte  cannedKeyAlgoClient[] = {
 #ifndef WOLFSSH_NO_SSH_RSA_SHA1
     ID_X509V3_SSH_RSA,
 #endif
+#endif
+#ifndef WOLFSSH_NO_ECDSA_SHA2_NISTP521
+    ID_ECDSA_SHA2_NISTP521,
+#endif
+#ifndef WOLFSSH_NO_ECDSA_SHA2_NISTP384
+    ID_ECDSA_SHA2_NISTP384,
+#endif
+#ifndef WOLFSSH_NO_ECDSA_SHA2_NISTP256
+    ID_ECDSA_SHA2_NISTP256,
+#endif
+#ifndef WOLFSSH_NO_SSH_RSA_SHA1
+    ID_SSH_RSA,
 #endif
 };
 
@@ -3159,6 +3159,356 @@ struct wolfSSH_sigKeyBlock {
     } sk;
 };
 
+
+/* Parse out a RAW RSA public key from buffer */
+static int ParseRSAPubKey(WOLFSSH *ssh,
+    struct wolfSSH_sigKeyBlock *sigKeyBlock_ptr, byte *pubKey, word32 pubKeySz)
+{
+    int ret;
+#ifndef WOLFSSH_NO_RSA
+    byte* e = NULL;
+    word32 eSz;
+    byte* n;
+    word32 nSz;
+    word32 pubKeyIdx = 0;
+    word32 scratch;
+
+    ret = wc_InitRsaKey(&sigKeyBlock_ptr->sk.rsa.key, ssh->ctx->heap);
+    if (ret != 0)
+        ret = WS_RSA_E;
+    if (ret == 0)
+        ret = GetUint32(&scratch, pubKey, pubKeySz, &pubKeyIdx);
+    /* This is the algo name. */
+    if (ret == WS_SUCCESS) {
+        pubKeyIdx += scratch;
+        ret = GetUint32(&eSz, pubKey, pubKeySz, &pubKeyIdx);
+        if (ret == WS_SUCCESS && eSz > pubKeySz - pubKeyIdx)
+            ret = WS_BUFFER_E;
+    }
+    if (ret == WS_SUCCESS) {
+        e = pubKey + pubKeyIdx;
+        pubKeyIdx += eSz;
+        ret = GetUint32(&nSz, pubKey, pubKeySz, &pubKeyIdx);
+        if (ret == WS_SUCCESS && nSz > pubKeySz - pubKeyIdx)
+            ret = WS_BUFFER_E;
+    }
+    if (ret == WS_SUCCESS) {
+        n = pubKey + pubKeyIdx;
+        ret = wc_RsaPublicKeyDecodeRaw(n, nSz, e, eSz,
+                                       &sigKeyBlock_ptr->sk.rsa.key);
+    }
+
+    if (ret == 0)
+        sigKeyBlock_ptr->keySz = sizeof(sigKeyBlock_ptr->sk.rsa.key);
+    else
+        ret = WS_RSA_E;
+#else
+    (void)tmpIdx;
+    ret = WS_INVALID_ALGO_ID;
+#endif
+    return ret;
+}
+
+/* Parse out a RAW ECC public key from buffer */
+static int ParseECCPubKey(WOLFSSH *ssh,
+    struct wolfSSH_sigKeyBlock *sigKeyBlock_ptr, byte *pubKey, word32 pubKeySz)
+{
+    int ret;
+#ifndef WOLFSSH_NO_ECDSA
+    byte* q;
+    word32 qSz, pubKeyIdx = 0;
+    int primeId;
+    word32 scratch;
+
+    ret = wc_ecc_init_ex(&sigKeyBlock_ptr->sk.ecc.key, ssh->ctx->heap,
+                                 INVALID_DEVID);
+#ifdef HAVE_WC_ECC_SET_RNG
+    if (ret == 0)
+        ret = wc_ecc_set_rng(&sigKeyBlock_ptr->sk.ecc.key, ssh->rng);
+#endif
+    if (ret != 0)
+        ret = WS_ECC_E;
+    else
+        ret = GetStringRef(&qSz, &q, pubKey, pubKeySz, &pubKeyIdx);
+
+    if (ret == WS_SUCCESS) {
+        primeId = (int)NameToId((const char*)q, qSz);
+        if (primeId != ID_UNKNOWN) {
+            primeId = wcPrimeForId((byte)primeId);
+            if (primeId == ECC_CURVE_INVALID)
+                ret = WS_INVALID_PRIME_CURVE;
+        }
+        else
+            ret = WS_INVALID_ALGO_ID;
+    }
+
+    /* Skip the curve name since we're getting it from the algo. */
+    if (ret == WS_SUCCESS)
+        ret = GetUint32(&scratch, pubKey, pubKeySz, &pubKeyIdx);
+
+    if (ret == WS_SUCCESS) {
+        pubKeyIdx += scratch;
+        ret = GetStringRef(&qSz, &q, pubKey, pubKeySz, &pubKeyIdx);
+    }
+
+    if (ret == WS_SUCCESS) {
+        ret = wc_ecc_import_x963_ex(q, qSz,
+                &sigKeyBlock_ptr->sk.ecc.key, primeId);
+        if (ret == 0)
+            sigKeyBlock_ptr->keySz = sizeof(sigKeyBlock_ptr->sk.ecc.key);
+        else
+            ret = WS_ECC_E;
+    }
+#else
+    ret = WS_INVALID_ALGO_ID;
+#endif
+    return ret;
+}
+
+
+#ifdef WOLFSSH_CERTS
+/* finds the leaf certificate and verifies it with known CA's
+ * returns WS_SUCCESS on success */
+static int ParseAndVerifyCert(WOLFSSH* ssh, byte* in, word32 inSz,
+    byte** leafOut, word32* leafOutSz)
+{
+    int ret;
+    word32 l = 0, m = 0;
+    word32 ocspCount = 0;
+    byte*  ocspBuf   = NULL;
+    word32 ocspBufSz = 0;
+    word32 certCount = 0;
+    byte*  certPt    = NULL;
+    word32 certChainSz = 0;
+
+    /* Skip the name */
+    ret = GetSize(&l, in, inSz, &m);
+    m += l;
+
+    /* Get the cert count */
+    ret = GetUint32(&certCount, in, inSz, &m);
+    if (ret == WS_SUCCESS) {
+        WLOG(WS_LOG_INFO, "Peer sent certificate count of %d", certCount);
+    }
+
+    if (ret == WS_SUCCESS) {
+        word32 count;
+
+        certPt = in + m;
+        m = 0;
+        for (count = certCount; count > 0; count--) {
+            word32 certSz = 0;
+
+            ret = GetSize(&certSz, certPt, inSz, &m);
+            WLOG(WS_LOG_INFO, "Adding certificate size %d", certSz);
+            if (ret != WS_SUCCESS) {
+                break;
+            }
+
+            /* store leaf cert size to present to user callback */
+            if (count == certCount && leafOut != NULL) {
+                *leafOutSz = certSz;
+                *leafOut   = certPt + m;
+            }
+            certChainSz += certSz + UINT32_SZ;
+            m += certSz;
+        }
+
+        if (ret == WS_SUCCESS) {
+            ocspBuf   = certPt + m;
+            ocspBufSz = inSz - certChainSz;
+        }
+
+        /* get OCSP count */
+        if (ret == WS_SUCCESS) {
+            m = 0;
+            ret = GetUint32(&ocspCount, ocspBuf, ocspBufSz, &m);
+        }
+
+        if (ret == WS_SUCCESS) {
+            WLOG(WS_LOG_INFO, "Peer sent OCSP count of %d", ocspCount);
+
+            /* RFC 6187 section 2.1 OCSP count must not exceed cert count */
+            if (ocspCount > certCount) {
+                WLOG(WS_LOG_ERROR, "Error more OCSP then Certs");
+                ret = WS_FATAL_ERROR;
+            }
+        }
+
+        /* @TODO handle OCSP's */
+        if (ocspCount > 0) {
+            WLOG(WS_LOG_INFO, "Peer sent OCSP's, not yet handled");
+            ret = GetSize(&l, ocspBuf, ocspBufSz, &m);
+        }
+    }
+
+    /* verify the certificate chain */
+    if (ret == WS_SUCCESS) {
+        ret = wolfSSH_CERTMAN_VerifyCerts_buffer(ssh->ctx->certMan,
+                    certPt, certChainSz, certCount);
+    }
+
+    return ret;
+}
+
+
+/* finds the leaf certificate after having been verified, and extracts the
+ * public key in DER format from it
+ * this function allocates 'out' buffer, it is up to the caller to free it
+ * return WS_SUCCESS on success */
+static int ParsePubKeyCert(WOLFSSH* ssh, byte* in, word32 inSz, byte** out,
+    word32* outSz)
+{
+    int ret;
+    byte*  leaf   = NULL;
+    word32 leafSz = 0;
+
+    ret = ParseAndVerifyCert(ssh, in, inSz, &leaf, &leafSz);
+    if (ret == WS_SUCCESS) {
+        int error = 0;
+        struct DecodedCert dCert;
+
+        wc_InitDecodedCert(&dCert, leaf, leafSz, ssh->ctx->heap);
+        error = wc_ParseCert(&dCert, CERT_TYPE, 0, NULL);
+        if (error == 0) {
+            error = wc_GetPubKeyDerFromCert(&dCert, *out, outSz);
+            if (error == LENGTH_ONLY_E) {
+                error = 0;
+                *out = (byte*)WMALLOC(*outSz, NULL, 0);
+                if (*out == NULL) {
+                    error = WS_MEMORY_E;
+                }
+            }
+
+            if (error == 0) {
+                error = wc_GetPubKeyDerFromCert(&dCert, *out, outSz);
+                if (error != 0) {
+                    WFREE(*out, NULL, 0);
+                }
+            }
+        }
+        wc_FreeDecodedCert(&dCert);
+
+        if (error != 0) {
+            ret = error;
+        }
+    }
+
+    return ret;
+}
+
+
+/* return WS_SUCCESS on success */
+static int ParseECCPubKeyCert(WOLFSSH *ssh,
+    struct wolfSSH_sigKeyBlock *sigKeyBlock_ptr, byte *pubKey, word32 pubKeySz)
+{
+    int ret;
+#ifndef WOLFSSH_NO_ECDSA
+    byte* der = NULL;
+    word32 derSz, idx = 0;
+    int error;
+
+    ret = ParsePubKeyCert(ssh, pubKey, pubKeySz, &der, &derSz);
+    if (ret == WS_SUCCESS) {
+        error = wc_ecc_init_ex(&sigKeyBlock_ptr->sk.ecc.key, ssh->ctx->heap,
+                                 INVALID_DEVID);
+    #ifdef HAVE_WC_ECC_SET_RNG
+        if (error == 0)
+            error = wc_ecc_set_rng(&sigKeyBlock_ptr->sk.ecc.key, ssh->rng);
+    #endif
+        if (error == 0)
+            error = wc_EccPublicKeyDecode(der, &idx,
+                &sigKeyBlock_ptr->sk.ecc.key, derSz);
+        if (error == 0)
+            sigKeyBlock_ptr->keySz = sizeof(sigKeyBlock_ptr->sk.ecc.key);
+        if (error != 0)
+            ret = error;
+        WFREE(der, NULL, 0);
+    }
+#else
+    ret = WS_INVALID_ALGO_ID;
+#endif
+
+    return ret;
+}
+
+
+/* return WS_SUCCESS on success */
+static int ParseRSAPubKeyCert(WOLFSSH *ssh,
+    struct wolfSSH_sigKeyBlock *sigKeyBlock_ptr, byte *pubKey, word32 pubKeySz)
+{
+
+    int ret;
+#ifndef WOLFSSH_NO_ECDSA
+    byte* der = NULL;
+    word32 derSz, idx = 0;
+    int error;
+
+    ret = ParsePubKeyCert(ssh, pubKey, pubKeySz, &der, &derSz);
+    if (ret == WS_SUCCESS) {
+        error = wc_InitRsaKey(&sigKeyBlock_ptr->sk.rsa.key, ssh->ctx->heap);
+        if (error == 0)
+            error = wc_RsaPublicKeyDecode(der, &idx,
+                                          &sigKeyBlock_ptr->sk.rsa.key, derSz);
+        if (error == 0)
+            sigKeyBlock_ptr->keySz = sizeof(sigKeyBlock_ptr->sk.rsa.key);
+        if (error != 0)
+            ret = error;
+        WFREE(der, NULL, 0);
+    }
+#else
+    ret = WS_INVALID_ALGO_ID;
+#endif
+
+    return ret;
+}
+#endif /* WOLFSSH_CERTS */
+
+
+/* Parse out a public key from buffer received
+ * return WS_SUCCESS on success */
+static int ParsePubKey(WOLFSSH *ssh,
+    struct wolfSSH_sigKeyBlock *sigKeyBlock_ptr, byte *pubKey, word32 pubKeySz)
+{
+    int ret;
+
+    switch (ssh->handshake->pubKeyId) {
+        case ID_SSH_RSA:
+            sigKeyBlock_ptr->useRsa = 1;
+            ret = ParseRSAPubKey(ssh, sigKeyBlock_ptr, pubKey, pubKeySz);
+            break;
+
+    #ifdef WOLFSSH_CERTS
+        case ID_X509V3_SSH_RSA:
+            sigKeyBlock_ptr->useRsa = 1;
+            ret = ParseRSAPubKeyCert(ssh, sigKeyBlock_ptr, pubKey, pubKeySz);
+            break;
+    #endif
+
+        case ID_ECDSA_SHA2_NISTP256:
+        case ID_ECDSA_SHA2_NISTP384:
+        case ID_ECDSA_SHA2_NISTP521:
+            sigKeyBlock_ptr->useRsa = 0;
+            ret = ParseECCPubKey(ssh, sigKeyBlock_ptr, pubKey, pubKeySz);
+            break;
+
+    #ifdef WOLFSSH_CERTS
+        case ID_X509V3_ECDSA_SHA2_NISTP256:
+        case ID_X509V3_ECDSA_SHA2_NISTP384:
+        case ID_X509V3_ECDSA_SHA2_NISTP521:
+            sigKeyBlock_ptr->useRsa = 0;
+            ret = ParseECCPubKeyCert(ssh, sigKeyBlock_ptr, pubKey, pubKeySz);
+            break;
+    #endif
+
+        default:
+            ret = WS_INVALID_ALGO_ID;
+    }
+
+    return ret;
+}
+
+
 static int DoKexDhReply(WOLFSSH* ssh, byte* buf, word32 len, word32* idx)
 {
     enum wc_HashType enmhashId;
@@ -3391,108 +3741,17 @@ static int DoKexDhReply(WOLFSSH* ssh, byte* buf, word32 len, word32* idx)
 #endif
 #endif
     }
+
     if (ret == WS_SUCCESS) {
         sig = buf + begin;
         tmpIdx = begin;
         begin += sigSz;
         *idx = begin;
 
-        /* Load in the server's public signing key */
-        sigKeyBlock_ptr->useRsa = ssh->handshake->pubKeyId == ID_SSH_RSA;
-
-        if (sigKeyBlock_ptr->useRsa) {
-#ifndef WOLFSSH_NO_RSA
-            byte* e = NULL;
-            word32 eSz;
-            byte* n;
-            word32 nSz;
-            word32 pubKeyIdx = 0;
-
-            ret = wc_InitRsaKey(&sigKeyBlock_ptr->sk.rsa.key, ssh->ctx->heap);
-            if (ret != 0)
-                ret = WS_RSA_E;
-            if (ret == 0)
-                ret = GetUint32(&scratch, pubKey, pubKeySz, &pubKeyIdx);
-            /* This is the algo name. */
-            if (ret == WS_SUCCESS) {
-                pubKeyIdx += scratch;
-                ret = GetUint32(&eSz, pubKey, pubKeySz, &pubKeyIdx);
-                if (ret == WS_SUCCESS && eSz > pubKeySz - pubKeyIdx)
-                    ret = WS_BUFFER_E;
-            }
-            if (ret == WS_SUCCESS) {
-                e = pubKey + pubKeyIdx;
-                pubKeyIdx += eSz;
-                ret = GetUint32(&nSz, pubKey, pubKeySz, &pubKeyIdx);
-                if (ret == WS_SUCCESS && nSz > pubKeySz - pubKeyIdx)
-                    ret = WS_BUFFER_E;
-            }
-            if (ret == WS_SUCCESS) {
-                n = pubKey + pubKeyIdx;
-                ret = wc_RsaPublicKeyDecodeRaw(n, nSz, e, eSz,
-                                               &sigKeyBlock_ptr->sk.rsa.key);
-            }
-
-            if (ret == 0)
-                sigKeyBlock_ptr->keySz = sizeof(sigKeyBlock_ptr->sk.rsa.key);
-            else
-                ret = WS_RSA_E;
-#else
-            (void)tmpIdx;
-            ret = WS_INVALID_ALGO_ID;
-#endif
-        } else {
-#ifndef WOLFSSH_NO_ECDSA
-            byte* q;
-            word32 qSz, pubKeyIdx = 0;
-            int primeId;
-
-            ret = wc_ecc_init_ex(&sigKeyBlock_ptr->sk.ecc.key, ssh->ctx->heap,
-                                 INVALID_DEVID);
-#ifdef HAVE_WC_ECC_SET_RNG
-            if (ret == WS_SUCCESS)
-                ret = wc_ecc_set_rng(&sigKeyBlock_ptr->sk.ecc.key, ssh->rng);
-#endif
-            if (ret != 0)
-                ret = WS_ECC_E;
-            else
-                ret = GetStringRef(&qSz, &q, pubKey, pubKeySz, &pubKeyIdx);
-
-            if (ret == WS_SUCCESS) {
-                primeId = (int)NameToId((const char*)q, qSz);
-                if (primeId != ID_UNKNOWN) {
-                    primeId = wcPrimeForId((byte)primeId);
-                    if (primeId == ECC_CURVE_INVALID)
-                        ret = WS_INVALID_PRIME_CURVE;
-                }
-                else
-                    ret = WS_INVALID_ALGO_ID;
-            }
-
-            /* Skip the curve name since we're getting it from the algo. */
-            if (ret == WS_SUCCESS)
-                ret = GetUint32(&scratch, pubKey, pubKeySz, &pubKeyIdx);
-
-            if (ret == WS_SUCCESS) {
-                pubKeyIdx += scratch;
-                ret = GetStringRef(&qSz, &q, pubKey, pubKeySz, &pubKeyIdx);
-            }
-
-            if (ret == WS_SUCCESS) {
-                ret = wc_ecc_import_x963_ex(q, qSz,
-                        &sigKeyBlock_ptr->sk.ecc.key, primeId);
-                if (ret == 0)
-                    sigKeyBlock_ptr->keySz = sizeof(sigKeyBlock_ptr->sk.ecc.key);
-                else
-                    ret = WS_ECC_E;
-            }
-#else
-            ret = WS_INVALID_ALGO_ID;
-#endif
-        }
+        ret = ParsePubKey(ssh, sigKeyBlock_ptr, pubKey, pubKeySz);
 
         /* Generate and hash in the shared secret */
-        if (ret == 0) {
+        if (ret == WS_SUCCESS)  {
             /* reset size here because a previous shared secret could
              * potentially be smaller by a byte than usual and cause buffer
              * issues with re-key */
