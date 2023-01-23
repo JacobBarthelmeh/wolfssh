@@ -177,6 +177,11 @@ AC_ARG_ENABLE([sshd],
     [AS_HELP_STRING([--enable-sshd],[Enable SSHD support (default: disabled)])],
     [ENABLED_SSHD=$enableval],[ENABLED_SSHD=no])
 
+# CLIENT APP
+AC_ARG_ENABLE([client],
+    [AS_HELP_STRING([--enable-client],[Enable building CLIENT wolfssh app (default: enabled)])],
+    [ENABLED_CLIENT=$enableval],[ENABLED_CLIENT=yes])
+
 # TCP/IP Forwarding
 AC_ARG_ENABLE([fwd],
     [AS_HELP_STRING([--enable-fwd],[Enable TCP/IP Forwarding support (default: disabled)])],
@@ -252,6 +257,8 @@ AS_IF([test "x$ENABLED_SMALLSTACK" = "xyes"],
        [AM_CPPFLAGS="$AM_CPPFLAGS -DWOLFSSH_SMALL_STACK"])
 AS_IF([test "x$ENABLED_SSHD" = "xyes"],
        [AM_CPPFLAGS="$AM_CPPFLAGS -DWOLFSSH_SSHD"])
+AS_IF([test "x$ENABLED_CLIENT" = "xyes"],
+       [AM_CPPFLAGS="$AM_CPPFLAGS -DWOLFSSH_CLIENT_APP"])
 
 if test "$ENABLED_SSHD" = "yes"; then
     if test -n "$PAM_LIB"
@@ -304,6 +311,7 @@ AM_CONDITIONAL([BUILD_TERM],[test "x$ENABLED_TERM" = "xyes"])
 AM_CONDITIONAL([BUILD_SHELL],[test "x$ENABLED_SHELL" = "xyes"])
 AM_CONDITIONAL([BUILD_AGENT],[test "x$ENABLED_AGENT" = "xyes"])
 AM_CONDITIONAL([BUILD_SSHD],[test "x$ENABLED_SSHD" = "xyes"])
+AM_CONDITIONAL([BUILD_CLIENT],[test "x$ENABLED_CLIENT" = "xyes"])
 AM_CONDITIONAL([BUILD_CERTS],[test "x$ENABLED_CERTS" = "xyes"])
 
 AX_HARDEN_CC_COMPILER_FLAGS

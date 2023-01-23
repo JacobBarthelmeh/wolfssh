@@ -34,6 +34,7 @@ EXTRA_DIST+= LICENSING README.md ChangeLog.md
 include src/include.am
 include wolfssh/include.am
 include apps/wolfsshd/include.am
+include apps/wolfssh/include.am
 include examples/include.am
 include tests/include.am
 include keys/include.am
