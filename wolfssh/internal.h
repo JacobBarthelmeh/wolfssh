@@ -789,6 +789,10 @@ struct WOLFSSH {
 #ifdef WOLFSSH_FWD
     void* fwdCbCtx;
 #endif /* WOLFSSH_FWD */
+#ifdef WOLFSSH_TERM
+    WS_CallbackTerminalSize termResizeCb;
+    void* termCtx;
+#endif
 };
 
 
@@ -904,6 +908,8 @@ WOLFSSH_LOCAL int SendChannelExit(WOLFSSH*, word32, int);
 WOLFSSH_LOCAL int SendChannelData(WOLFSSH*, word32, byte*, word32);
 WOLFSSH_LOCAL int SendChannelWindowAdjust(WOLFSSH*, word32, word32);
 WOLFSSH_LOCAL int SendChannelRequest(WOLFSSH*, byte*, word32);
+WOLFSSH_LOCAL int SendChannelTerminalResize(WOLFSSH*, word32, word32, word32,
+    word32);
 WOLFSSH_LOCAL int SendChannelTerminalRequest(WOLFSSH* ssh);
 WOLFSSH_LOCAL int SendChannelAgentRequest(WOLFSSH* ssh);
 WOLFSSH_LOCAL int SendChannelSuccess(WOLFSSH*, word32, int);

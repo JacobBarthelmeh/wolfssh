@@ -181,6 +181,41 @@ typedef struct thread_args {
     #define THREAD_RET_SUCCESS 0
 #endif
 
+#include <semaphore.h>
+static sem_t windowSem;
+
+/* capture window change signales */
+static void WindowChangeSignal(int sig)
+{
+    sem_post(&windowSem);
+    (void)sig;
+}
+
+
+/* thread for handling window size adjustments */
+static THREAD_RET windowMonitor(void* in)
+{
+    thread_args* args;
+    int ret;
+    struct winsize windowSize = {0,0,0,0};
+
+    args = (thread_args*)in;
+    do {
+        sem_wait(&windowSem);
+        wc_LockMutex(&args->lock);
+        ioctl(STDOUT_FILENO, TIOCGWINSZ, &windowSize);
+        ret = wolfSSH_ChangeTerminalSize(args->ssh,
+                windowSize.ws_row, windowSize.ws_col,
+                windowSize.ws_xpixel, windowSize.ws_ypixel);
+        wc_UnLockMutex(&args->lock);
+        (void)ret;
+
+    } while (1);
+
+    return THREAD_RET_SUCCESS;
+}
+
+
 static THREAD_RET readInput(void* in)
 {
     byte buf[256];
@@ -249,6 +284,13 @@ static THREAD_RET readPeer(void* in)
     FD_ZERO(&errSet);
     FD_SET(fd, &readSet);
     FD_SET(fd, &errSet);
+
+#ifdef USE_WINDOWS_API
+    /* set handle to use for window resize */
+    wc_LockMutex(&args->lock);
+    wolfSSH_SetTerminalResizeCtx(args->ssh, stdoutHandle);
+    wc_UnLockMutex(&args->lock);
+#endif
 
     while (ret >= 0) {
         bytes = select(fd + 1, &readSet, NULL, &errSet, NULL);
@@ -728,14 +770,19 @@ THREAD_RETURN WOLFSSH_THREAD client_test(void* args)
     if (cmd != NULL || keepOpen == 1) {
     #if defined(_POSIX_THREADS)
         thread_args arg;
-        pthread_t   thread[2];
+        pthread_t   thread[3];
 
         arg.ssh = ssh;
         wc_InitMutex(&arg.lock);
-        pthread_create(&thread[0], NULL, readInput, (void*)&arg);
-        pthread_create(&thread[1], NULL, readPeer, (void*)&arg);
-        pthread_join(thread[1], NULL);
+        sem_init(&windowSem, 0, 0);
+        signal(SIGWINCH, WindowChangeSignal);
+        pthread_create(&thread[0], NULL, windowMonitor, (void*)&arg);
+        pthread_create(&thread[1], NULL, readInput, (void*)&arg);
+        pthread_create(&thread[2], NULL, readPeer, (void*)&arg);
+        pthread_join(thread[2], NULL);
         pthread_cancel(thread[0]);
+        pthread_cancel(thread[1]);
+        sem_destroy(&windowSem);
     #elif defined(_MSC_VER)
         thread_args arg;
         HANDLE thread[2];

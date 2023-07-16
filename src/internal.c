@@ -626,6 +626,29 @@ void CtxResourceFree(WOLFSSH_CTX* ctx)
 }
 
 
+#ifdef WOLFSSH_TERM
+/* default terminal resize handling callbacks */
+
+#ifdef USE_WINDOWS_API
+void WS_WindowsTermResize(WOLFSSH* ssh, word32 col, word32 row, word32 colP,
+    word32 rowP, void* usrCtx)
+{
+    HANDLE term = (HANDLE*)usrCtx;
+
+    if (term != NULL) {
+        SMALL_RECT w;
+
+        w.Left = 0;
+        w.Top = 0;
+        w.Right = col;
+        w.Bottom = 0 - row;
+        SetConsoleWindowInfo(term, TRUE, &w);
+    }
+}
+#endif
+
+#endif /* WOLFSSH_TERM */
+
 WOLFSSH* SshInit(WOLFSSH* ssh, WOLFSSH_CTX* ctx)
 {
 #if defined(STM32F2) || defined(STM32F4) || defined(FREESCALE_MQX)
@@ -716,6 +739,12 @@ WOLFSSH* SshInit(WOLFSSH* ssh, WOLFSSH_CTX* ctx)
 
 #ifdef WOLFSSH_AGENT
     ssh->agentEnabled = ctx->agentEnabled;
+#endif
+
+#ifdef WOLFSSH_TERM
+    #if defined(USE_WINDOWS_API)
+    ssh->termResizeCb = WS_WindowsTermResize;
+    #endif
 #endif
 
     if (BufferInit(&ssh->inputBuffer, 0, ctx->heap) != WS_SUCCESS  ||
@@ -6697,6 +6726,10 @@ static int DoChannelRequest(WOLFSSH* ssh,
                 WLOG(WS_LOG_DEBUG, "  widthPixels = %u", widthPixels);
                 WLOG(WS_LOG_DEBUG, "  heightPixels = %u", heightPixels);
                 WLOG(WS_LOG_DEBUG, "  modes = %u", (modesSz - 1) / 5);
+                if (ssh->termResizeCb) {
+                    ssh->termResizeCb(ssh, widthChar, heightRows, widthPixels,
+                        heightPixels, ssh->termCtx);
+                }
             }
         }
         else
@@ -6746,6 +6779,30 @@ static int DoChannelRequest(WOLFSSH* ssh,
                 WLOG(WS_LOG_AGENT, "Agent callback not set, not using.");
         }
 #endif /* WOLFSSH_AGENT */
+#ifdef WOLFSSH_SHELL
+        else if (WSTRNCMP(type, "window-change", typeSz) == 0) {
+            word32 widthChar, heightRows, widthPixels, heightPixels;
+
+            ret = GetUint32(&widthChar, buf, len, &begin);
+            if (ret == WS_SUCCESS)
+                ret = GetUint32(&heightRows, buf, len, &begin);
+            if (ret == WS_SUCCESS)
+                ret = GetUint32(&widthPixels, buf, len, &begin);
+            if (ret == WS_SUCCESS)
+                ret = GetUint32(&heightPixels, buf, len, &begin);
+
+            if (ret == WS_SUCCESS) {
+                WLOG(WS_LOG_DEBUG, "  widthChar = %u", widthChar);
+                WLOG(WS_LOG_DEBUG, "  heightRows = %u", heightRows);
+                WLOG(WS_LOG_DEBUG, "  widthPixels = %u", widthPixels);
+                WLOG(WS_LOG_DEBUG, "  heightPixels = %u", heightPixels);
+                if (ssh->termResizeCb) {
+                    ssh->termResizeCb(ssh, widthChar, heightRows, widthPixels,
+                        heightPixels, ssh->termCtx);
+                }
+            }
+        }
+#endif
     }
 
     if (ret == WS_SUCCESS)
@@ -12772,6 +12829,68 @@ static int CreateMode(WOLFSSH* ssh, byte* mode)
     WOLFSSH_UNUSED(ssh);
     mode[idx++] = WOLFSSH_TTY_OP_END;
     return idx;
+}
+
+
+int SendChannelTerminalResize(WOLFSSH* ssh, word32 columns, word32 rows,
+    word32 widthPixels, word32 heightPixels)
+{
+    int ret = WS_SUCCESS;
+    byte* output;
+    word32 idx;
+    WOLFSSH_CHANNEL* channel = NULL;
+    const char* cType = "window-change";
+    word32 typeSz = 0;
+
+    if (ret == WS_SUCCESS) {
+        channel = ChannelFind(ssh,
+                ssh->defaultPeerChannelId, WS_CHANNEL_ID_PEER);
+        if (channel == NULL)
+            ret = WS_INVALID_CHANID;
+    }
+
+    if (ret == WS_SUCCESS) {
+        typeSz = (word32)sizeof(cType) - 1;
+        ret = PreparePacket(ssh, MSG_ID_SZ + UINT32_SZ + LENGTH_SZ +
+                                 typeSz + BOOLEAN_SZ + (4 * UINT32_SZ));
+    }
+
+    if (ret == WS_SUCCESS) {
+        output = ssh->outputBuffer.buffer;
+        idx = ssh->outputBuffer.length;
+
+        output[idx++] = MSGID_CHANNEL_REQUEST;
+        c32toa(channel->peerChannel, output + idx);
+        idx += UINT32_SZ;
+        c32toa(typeSz, output + idx);
+        idx += LENGTH_SZ;
+        WMEMCPY(output + idx, cType, typeSz);
+        idx += typeSz;
+        output[idx++] = 0;
+
+        c32toa(columns, output + idx);
+        idx += UINT32_SZ;
+        c32toa(rows, output + idx);
+        idx += UINT32_SZ;
+        c32toa(widthPixels, output + idx);
+        idx += UINT32_SZ;
+        c32toa(heightPixels, output + idx);
+        idx += UINT32_SZ;
+
+        ssh->outputBuffer.length = idx;
+
+        WLOG(WS_LOG_INFO, "Sending Channel Request: ");
+        WLOG(WS_LOG_INFO, "  channelId = %u", channel->peerChannel);
+        WLOG(WS_LOG_INFO, "  type = %s", cType);
+        WLOG(WS_LOG_INFO, "  wantReply = %u", 0);
+
+        ret = BundlePacket(ssh);
+    }
+
+    if (ret == WS_SUCCESS)
+        ret = wolfSSH_SendPacket(ssh);
+
+    return ret;
 }
 
 
