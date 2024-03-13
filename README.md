@@ -496,4 +496,4 @@ WOLFSSH APPLICATIONS
 ====================
 
 wolfSSH comes with a server daemon and a command line shell tool. Check out
-the apps directory for more information.
+the apps directory for more information. 
