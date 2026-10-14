@@ -75,8 +75,10 @@ jobs:
 
       - name: configure
         working-directory: ./wolfssh/
+        # WOLFSSH_MAX_SFTP_RW stays under the 256 KiB message limit of
+        # OpenSSH's sftp-server, which drops the connection on anything larger.
         run : |
-          ./configure --enable-all LDFLAGS="-L${{ github.workspace }}/build-dir/lib" CPPFLAGS="-I${{ github.workspace }}/build-dir/include -DWOLFSSH_NO_FPKI -DWOLFSSH_NO_SFTP_TIMEOUT -DWOLFSSH_MAX_SFTP_RW=4000000 -DMAX_PATH_SZ=120 -DEXAMPLE_SFTP_BENCHMARK"
+          ./configure --enable-all LDFLAGS="-L${{ github.workspace }}/build-dir/lib" CPPFLAGS="-I${{ github.workspace }}/build-dir/include -DWOLFSSH_NO_FPKI -DWOLFSSH_NO_SFTP_TIMEOUT -DWOLFSSH_MAX_SFTP_RW=250000 -DMAX_PATH_SZ=120 -DEXAMPLE_SFTP_BENCHMARK"
 
       - name: make
         working-directory: ./wolfssh/
@@ -114,6 +116,9 @@ jobs:
           sed -i.bak "s/hansel/$USER/" ./keys/hansel-key-ecc.pub
           chmod 600 ./keys/hansel-key-*.pem
           chmod 600 ./keys/hansel-key-*.pub
+          # The runner account has a locked password and sshd refuses
+          # every login to a locked account, pubkey included.
+          sudo usermod -p '*' $USER
           sudo mkdir -p /run/sshd
           sudo chmod 755 /run/sshd
           sudo /usr/sbin/sshd -p 22222 -f sshd-config-test.txt -E $PWD/sshd-log.txt

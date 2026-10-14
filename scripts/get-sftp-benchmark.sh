@@ -45,7 +45,7 @@ parse_openssh_rate() {
 
 do_openssh_put_test() {
     cp $TEST_FILE $TEST_FILE-out
-    sftp_command="timeout 30 sftp -P $PORT -o BatchMode=yes -o StrictHostKeyChecking=no -i $KEY $USER@127.0.0.1"
+    sftp_command="timeout --foreground 30 sftp -P $PORT -o BatchMode=yes -o StrictHostKeyChecking=no -i $KEY $USER@127.0.0.1"
     output_file="sftp_log.txt"
 
     # Start the script command to capture the sftp session
@@ -63,7 +63,7 @@ EOF" /dev/null > $output_file 2>&1
 
 do_openssh_get_test() {
     cp $TEST_FILE $TEST_FILE-out
-    sftp_command="timeout 30 sftp -P $PORT -o BatchMode=yes -o StrictHostKeyChecking=no -i $KEY $USER@127.0.0.1"
+    sftp_command="timeout --foreground 30 sftp -P $PORT -o BatchMode=yes -o StrictHostKeyChecking=no -i $KEY $USER@127.0.0.1"
     output_file="sftp_log.txt"
 
     # Start the script command to capture the sftp session

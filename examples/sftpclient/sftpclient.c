@@ -1523,8 +1523,6 @@ static int doAutopilot(int cmd, char* local, char* remote)
 #if !defined(WOLFSSH_NO_TIMESTAMP) && !defined(USE_WINDOWS_API) &&\
     defined(EXAMPLE_SFTP_BENCHMARK)
     double currentTime;
-    double longBytes = 0;
-    FILE* f;
 #endif
 
 
@@ -1557,14 +1555,6 @@ static int doAutopilot(int cmd, char* local, char* remote)
 
 #if !defined(WOLFSSH_NO_TIMESTAMP) && !defined(USE_WINDOWS_API) &&\
     defined(EXAMPLE_SFTP_BENCHMARK)
-    ret = WFOPEN(NULL, &f, fullpath, "rb");
-    if (ret != 0 || f == WBADFILE) return WS_BAD_FILE_E;
-    if (WFSEEK(NULL, f, 0, WSEEK_END) != 0) {
-        WFCLOSE(NULL, f);
-        return WS_BAD_FILE_E;
-    }
-    longBytes = (word32)WFTELL(NULL, f);
-    WREWIND(NULL, f);
     currentTime = current_time_ms(0);
 #endif
 
@@ -1617,11 +1607,22 @@ static int doAutopilot(int cmd, char* local, char* remote)
 #if !defined(WOLFSSH_NO_TIMESTAMP) && !defined(USE_WINDOWS_API) &&\
     defined(EXAMPLE_SFTP_BENCHMARK)
     else {
-        currentTime = current_time_ms(0) - currentTime;
-        double result;
-        result = (double)longBytes / 1000000;
-        result = result / ((double)currentTime / 1000000);
-        printf("Transferred %s at %.2fMB/s\n", fullpath, result);
+        /* Size the local side after the transfer: the source for a put,
+         * the destination for a get. A sizing failure is not a transfer
+         * failure. */
+        FILE* f = WBADFILE;
+        double seconds = (current_time_ms(0) - currentTime) / 1000000;
+
+        if (WFOPEN(NULL, &f, local, "rb") == 0 && f != WBADFILE) {
+            if (WFSEEK(NULL, f, 0, WSEEK_END) == 0) {
+                long bytes = WFTELL(NULL, f);
+                printf("Transferred %s at %.2fMB/s\n", fullpath,
+                        ((double)bytes / 1000000) / seconds);
+            }
+            WFCLOSE(NULL, f);
+        }
+        if (f == WBADFILE)
+            fprintf(stderr, "Unable to size local file %s\n", local);
     }
 #endif
 
